@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JHZ 藍芽 & RS485 控制面板</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    body {
+      background-color: #f4f6f9;
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 600px;
+      background: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      padding: 12px 16px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .header h2 {
+      margin: 0 0 6px 0;
+      color: #333;
+      font-size: 20px;
+    }
+    .btn-connect {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: bold;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.2s;
+    }
+    .btn-connect:hover { background-color: #0056b3; }
+    .status-text {
+      text-align: center;
+      font-size: 13px;
+      margin-top: 4px;
+      color: #d9534f;
+      font-weight: bold;
+    }
+    .status-text.connected { color: #28a745; }
+
+    /* Tab 頁籤 */
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #e9ecef;
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 6px;
+      text-align: center;
+      background: none;
+      border: none;
+      font-size: 14px;
+      font-weight: bold;
+      color: #6c757d;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+    }
+    .tab-btn.active {
+      color: #007bff;
+      border-bottom-color: #007bff;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* 💡 繼電器按鈕格線：固定 4 欄，排列為 0-3 在上、4-7 在下 */
+    .relay-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .btn-relay {
+      padding: 12px;
+      font-size: 14px;
+      font-weight: bold;
+      border: 1px solid #ced4da;
+      border-radius: 6px;
+      background: #f8f9fa;
+      color: #333;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-relay.active {
+      background: #28a745;
+      color: white;
+      border-color: #28a745;
+    }
+    .action-btns {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-action {
+      flex: 1;
+      padding: 8px;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      color: white;
+    }
+    .btn-on { background-color: #28a745; }
+    .btn-off { background-color: #dc3545; }
+
+    /* 緊湊表格樣式 */
+    .table-wrapper {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dee2e6;
+      padding: 3px 6px;
+      text-align: center;
+    }
+    th {
+      background-color: #f1f3f5;
+      padding: 6px;
+    }
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      padding: 2px 4px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      text-align: center;
+      font-size: 13px;
+      height: 26px;
+    }
+
+    /* Terminal Log 視窗 */
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+    .log-box {
+      background-color: #1e1e1e;
+      color: #00ff66;
+      font-family: monospace;
+      padding: 8px;
+      border-radius: 6px;
+      height: 300px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.3;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h2>JHZ 藍芽 & RS485 控制面板</h2>
+    <button id="btnConnect" class="btn-connect" onclick="toggleConnect()">連接 JHZ BLE 裝置</button>
+    <div id="statusText" class="status-text">狀態：裝置已斷開連結</div>
+  </div>
+
+  <!-- 分頁選單 -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('relayTab', this)">繼電器控制</button>
+    <button class="tab-btn" onclick="switchTab('rs485Tab', this)">RS485 參數設定</button>
+    <button class="tab-btn" onclick="switchTab('testTab', this)">RS485 測試診斷</button>
+  </div>
+
+  <!-- Tab 1: 繼電器控制 -->
+  <div id="relayTab" class="tab-content active">
+    <div class="relay-grid" id="relayGrid"></div>
+    <div class="action-btns">
+      <button class="btn-action btn-on" onclick="handleAllRelay(true)">全開 (ALL ON)</button>
+      <button class="btn-action btn-off" onclick="handleAllRelay(false)">全關 (ALL OFF)</button>
+    </div>
+  </div>
+
+  <!-- Tab 2: RS485 參數設定 -->
+  <div id="rs485Tab" class="tab-content">
+    <div style="margin-bottom: 8px; display: flex; gap: 8px;">
+      <button class="btn-action" style="background:#17a2b8;" onclick="sendBLE('GET_RS485_CFG')">讀取 RS485 設定</button>
+      <button class="btn-action" style="background:#28a745;" onclick="saveRS485Config()">儲存設定至 ESP32</button>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 40px;">啟用</th>
+            <th>設備名稱</th>
+            <th style="width: 80px;">Slave ID</th>
+            <th style="width: 110px;">功能碼</th>
+            <th style="width: 100px;">暫存器位址</th>
+            <th style="width: 80px;">讀取數量</th>
+          </tr>
+        </thead>
+        <tbody id="rs485TableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab 3: RS485 測試診斷 -->
+  <div id="testTab" class="tab-content">
+    <p style="font-size: 13px; color: #666; margin: 4px 0 8px 0;">可點擊發送單次 RS485 Modbus 讀取測試：</p>
+    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+      <select id="testGroupSelect" style="flex:1; padding: 4px; height: 32px;"></select>
+      <button class="btn-action" style="background:#007bff; width: 120px;" onclick="sendRS485Test()">發送測試請求</button>
+    </div>
+  </div>
+
+  <!-- Log 紀錄視窗 -->
+  <div class="log-header">
+    <span style="font-weight: bold; font-size: 13px;">BLE / RS485 通訊 Log：</span>
+    <button onclick="clearLog()" style="padding: 2px 6px; font-size: 11px; cursor: pointer;">清空 Log</button>
+  </div>
+  <div id="logBox" class="log-box"></div>
+</div>
+
+<script>
+  const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const CHARACTERISTIC_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+  const CHARACTERISTIC_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+
+  let bleDevice = null;
+  let rxCharacteristic = null;
+  let txCharacteristic = null;
+  
+  let jsonBuffer = "";
+  let isB64Rx = false;
+  let isReceivingConfig = false;
+
+  initRelayButtons();
+  initDefaultTable();
+
+  function switchTab(tabId, btn) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById(tabId).classList.add('active');
+    btn.classList.add('active');
+
+    if (tabId === 'rs485Tab' && bleDevice && bleDevice.gatt.connected) {
+      log("自動讀取 ESP32 內部的 RS485 設定...");
+      sendBLE('GET_RS485_CFG');
+    }
+
+    if (tabId === 'testTab') {
+      updateTestGroupDropdown();
+    }
+  }
+
+  function initRelayButtons() {
+    const grid = document.getElementById('relayGrid');
+    grid.innerHTML = '';
+    for (let i = 0; i < 8; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'btn-relay';
+      btn.id = `relay-btn-${i}`;
+      btn.innerText = `Ch ${i}`;
+      btn.onclick = () => {
+        sendBLE(`${i}`);
+        btn.classList.toggle('active');
+      };
+      grid.appendChild(btn);
+    }
+  }
+
+  function handleAllRelay(enable) {
+    sendBLE(enable ? 'ALL_ON' : 'ALL_OFF');
+    for (let i = 0; i < 8; i++) {
+      const btn = document.getElementById(`relay-btn-${i}`);
+      if (btn) {
+        if (enable) btn.classList.add('active');
+        else btn.classList.remove('active');
+      }
+    }
+  }
+
+  function initDefaultTable() {
+    const defaultData = {
+      baud: 9600,
+      devices: Array.from({ length: 10 }, (_, i) => ({
+        name: `設備 ${i + 1}`,
+        slave_id: i + 1,
+        func_code: 3,
+        reg_addr: 0,
+        reg_count: 2,
+        enabled: i < 2
+      }))
+    };
+    renderRS485Table(defaultData);
+  }
+
+  function renderRS485Table(data) {
+    const tbody = document.getElementById('rs485TableBody');
+    tbody.innerHTML = '';
+
+    data.devices.forEach((dev, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="checkbox" class="cfg-enabled" ${dev.enabled ? 'checked' : ''}></td>
+        <td><input type="text" class="cfg-name" value="${dev.name || ('設備 ' + (idx + 1))}"></td>
+        <td><input type="number" class="cfg-slave-id" value="${dev.slave_id}" min="1" max="247"></td>
+        <td>
+          <select class="cfg-func-code">
+            <option value="3" ${dev.func_code == 3 ? 'selected' : ''}>03 Holding</option>
+            <option value="4" ${dev.func_code == 4 ? 'selected' : ''}>04 Input</option>
+          </select>
+        </td>
+        <td><input type="number" class="cfg-reg-addr" value="${dev.reg_addr}"></td>
+        <td><input type="number" class="cfg-reg-count" value="${dev.reg_count}" min="1" max="16"></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function toggleConnect() {
+    if (bleDevice && bleDevice.gatt.connected) {
+      bleDevice.gatt.disconnect();
+      return;
+    }
+
+    try {
+      log("正在尋找 BLE 裝置...");
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: 'JHZ_BLE_' }],
+        optionalServices: [SERVICE_UUID]
+      });
+
+      bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+      const server = await bleDevice.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+
+      rxCharacteristic = await service.getCharacteristic(CHARACTERISTIC_RX_UUID);
+      txCharacteristic = await service.getCharacteristic(CHARACTERISTIC_TX_UUID);
+
+      await txCharacteristic.startNotifications();
+      txCharacteristic.addEventListener('characteristicvaluechanged', handleBLEData);
+
+      document.getElementById('btnConnect').innerText = "中斷 BLE 連線";
+      document.getElementById('btnConnect').style.backgroundColor = "#dc3545";
+      const statusText = document.getElementById('statusText');
+      statusText.innerText = `狀態：已連線至 ${bleDevice.name}`;
+      statusText.classList.add('connected');
+
+      log(`成功連線至 ${bleDevice.name}`);
+    } catch (error) {
+      log(`[連線失敗] ${error}`);
+    }
+  }
+
+  function onDisconnected() {
+    document.getElementById('btnConnect').innerText = "連接 JHZ BLE 裝置";
+    document.getElementById('btnConnect').style.backgroundColor = "#007bff";
+    const statusText = document.getElementById('statusText');
+    statusText.innerText = "狀態：裝置已斷開連結";
+    statusText.classList.remove('connected');
+    log("BLE 連線已中斷");
+  }
+
+  function handleBLEData(event) {
+    const value = new TextDecoder().decode(event.target.value);
+
+    if (value === "RS485_CFG_B64_START") {
+      jsonBuffer = "";
+      isB64Rx = true;
+      isReceivingConfig = true;
+      log("[BLE RX] 開始接收 Base64 設定檔...");
+      return;
+    }
+
+    if (value.startsWith("RS485_CFG:")) {
+      jsonBuffer = value.substring(10);
+      isB64Rx = false;
+      isReceivingConfig = true;
+      return;
+    }
+
+    if (value === "RS485_CFG_END") {
+      isReceivingConfig = false;
+      log("[BLE RX] JSON 設定檔接收完成！");
+      try {
+        let finalJsonStr = jsonBuffer;
+        if (isB64Rx) {
+          const binaryStr = atob(jsonBuffer);
+          const bytes = Uint8Array.from(binaryStr, c => c.charCodeAt(0));
+          finalJsonStr = new TextDecoder().decode(bytes);
+        }
+        const parsed = JSON.parse(finalJsonStr);
+        renderRS485Table(parsed);
+        log("[系統] RS485 設定表格已更新完畢");
+      } catch (e) {
+        log(`[解析失敗] JSON 格式無效或 Base64 解碼失敗: ${e}`);
+      }
+      jsonBuffer = "";
+      return;
+    }
+
+    if (isReceivingConfig) {
+      jsonBuffer += value;
+      return;
+    }
+
+    if (value === "SET_RS485_OK") log("[ESP32] /rs485info.json 寫入成功！");
+    if (value === "SET_RS485_ERR") log("[ESP32] /rs485info.json 寫入失敗！");
+
+    if (value.startsWith("RS485_DATA:") || value.startsWith("RS485_ERR:")) {
+      log(`[RS485 回應] ${value}`);
+      return;
+    }
+
+    log(`[BLE RX] ${value}`);
+  }
+
+  async function sendBLE(data) {
+    if (!rxCharacteristic) {
+      alert("請先連接 BLE 裝置！");
+      return;
+    }
+    try {
+      log(`[BLE TX] ${data}`);
+      const encoder = new TextEncoder();
+      await rxCharacteristic.writeValue(encoder.encode(data));
+    } catch (e) {
+      log(`[發送失敗] ${e}`);
+    }
+  }
+
+  async function saveRS485Config() {
+    const rows = document.querySelectorAll('#rs485TableBody tr');
+    const devices = [];
+
+    rows.forEach((tr, idx) => {
+      devices.push({
+        name: tr.querySelector('.cfg-name').value.trim() || `設備 ${idx + 1}`,
+        slave_id: parseInt(tr.querySelector('.cfg-slave-id').value) || (idx + 1),
+        func_code: parseInt(tr.querySelector('.cfg-func-code').value),
+        reg_addr: parseInt(tr.querySelector('.cfg-reg-addr').value) || 0,
+        reg_count: parseInt(tr.querySelector('.cfg-reg-count').value) || 1,
+        enabled: tr.querySelector('.cfg-enabled').checked
+      });
+    });
+
+    const jsonString = JSON.stringify({ baud: 9600, devices: devices });
+
+    const utf8Bytes = new TextEncoder().encode(jsonString);
+    const base64String = btoa(String.fromCharCode(...utf8Bytes));
+
+    await sendBLE("SET_RS485_START");
+
+    const chunkSize = 80;
+    for (let i = 0; i < base64String.length; i += chunkSize) {
+      const chunk = base64String.substring(i, i + chunkSize);
+      await sendBLE(`SET_RS485_B64:${chunk}`);
+      await new Promise(r => setTimeout(r, 40));
+    }
+
+    await sendBLE("SET_RS485_END");
+  }
+
+  function updateTestGroupDropdown() {
+    const select = document.getElementById('testGroupSelect');
+    select.innerHTML = '';
+
+    const rows = document.querySelectorAll('#rs485TableBody tr');
+    rows.forEach((tr) => {
+      const name = tr.querySelector('.cfg-name').value;
+      const slaveId = tr.querySelector('.cfg-slave-id').value;
+      const funcCode = tr.querySelector('.cfg-func-code').value;
+      const regAddr = tr.querySelector('.cfg-reg-addr').value;
+      const regCount = tr.querySelector('.cfg-reg-count').value;
+
+      const opt = document.createElement('option');
+      opt.value = `${slaveId},${funcCode},${regAddr},${regCount}`;
+      opt.innerText = `${name} (Slave ID: ${slaveId})`;
+      select.appendChild(opt);
+    });
+  }
+
+  function sendRS485Test() {
+    const params = document.getElementById('testGroupSelect').value;
+    if (!params) return;
+    sendBLE(`TEST_RS485:${params}`);
+  }
+
+  function log(msg) {
+    const logBox = document.getElementById('logBox');
+    const time = new Date().toLocaleTimeString();
+    logBox.innerText += `[${time}] ${msg}\n`;
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  function clearLog() {
+    document.getElementById('logBox').innerText = '';
+  }
+</script>
+</body>
+</html>
