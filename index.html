@@ -3,16 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JHZ BLE&RS485 Control</title>
-
-  <!-- 加入 Favicon 圖示 -->
-  <link rel="icon" href="icon.png" type="image/png">
-
+  <title>JHZ 藍芽 & RS485 控制面板</title>
   <style>
     * {
       box-sizing: border-box;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      
+      /* 防止手機長按選取文字、跳出選單與不必要的雙擊縮放 */
+      -webkit-user-select: none; /* Safari / iOS Safari */
+      user-select: none;         /* 標準語法 */
+      touch-action: manipulation;/* 禁用雙擊放大，加速點擊反應 */
     }
+
+    /* 允許輸入框與表格可正常選取/輸入文字 */
+    input, select, textarea, .log-box {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+
     body {
       background-color: #f4f6f9;
       margin: 0;
