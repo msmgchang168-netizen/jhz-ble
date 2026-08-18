@@ -30,7 +30,7 @@
     }
     .container {
       width: 100%;
-      max-width: 600px;
+      max-width: 800px; /* 擴展寬度以符合新增的欄位 */
       background: #ffffff;
       border-radius: 10px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.08);
@@ -93,7 +93,7 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
-    /* 💡 繼電器按鈕格線：固定 4 欄，排列為 0-3 在上、4-7 在下 */
+    /* 繼電器按鈕格線 */
     .relay-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -141,16 +141,17 @@
       width: 100%;
       border-collapse: collapse;
       margin-bottom: 8px;
-      font-size: 13px;
+      font-size: 12px;
     }
     th, td {
       border: 1px solid #dee2e6;
-      padding: 3px 6px;
+      padding: 3px 4px;
       text-align: center;
     }
     th {
       background-color: #f1f3f5;
       padding: 6px;
+      white-space: nowrap;
     }
     input[type="text"], input[type="number"], select {
       width: 100%;
@@ -158,8 +159,14 @@
       border: 1px solid #ced4da;
       border-radius: 4px;
       text-align: center;
-      font-size: 13px;
+      font-size: 12px;
       height: 26px;
+    }
+    /* 唯讀備註欄位樣式 */
+    input[readonly] {
+      background-color: #e9ecef;
+      color: #495057;
+      cursor: not-allowed;
     }
 
     /* Terminal Log 視窗 */
@@ -176,7 +183,7 @@
       font-family: monospace;
       padding: 8px;
       border-radius: 6px;
-      height: 300px;
+      height: 250px;
       overflow-y: auto;
       font-size: 12px;
       line-height: 1.3;
@@ -219,12 +226,16 @@
       <table>
         <thead>
           <tr>
-            <th style="width: 40px;">啟用</th>
+            <th style="width: 35px;">啟用</th>
             <th>設備名稱</th>
-            <th style="width: 80px;">Slave ID</th>
-            <th style="width: 110px;">功能碼</th>
-            <th style="width: 100px;">暫存器位址</th>
-            <th style="width: 80px;">讀取數量</th>
+            <th style="width: 60px;">Slave ID</th>
+            <th style="width: 95px;">功能碼</th>
+            <th style="width: 75px;">暫存器位址</th>
+            <th style="width: 65px;">讀取數量</th>
+            <!-- 💡 新增 1：讀取間隔秒數 -->
+            <th style="width: 70px;">讀取間隔 (s)</th>
+            <!-- 💡 新增 2：異常停用備註 (由 ESP32 自動記錄日期時間) -->
+            <th style="width: 140px;">備註 / 狀態</th>
           </tr>
         </thead>
         <tbody id="rs485TableBody"></tbody>
@@ -308,6 +319,7 @@
     }
   }
 
+  // 初始化預設資料 (包含 read_interval 與 disabled_note)
   function initDefaultTable() {
     const defaultData = {
       baud: 9600,
@@ -317,12 +329,15 @@
         func_code: 3,
         reg_addr: 0,
         reg_count: 2,
-        enabled: i < 2
+        enabled: i < 2,
+        read_interval: 5,     // 預設讀取間隔 5 秒
+        disabled_note: ""     // 預設無停用備註
       }))
     };
     renderRS485Table(defaultData);
   }
 
+  // 渲染 RS485 設定表格
   function renderRS485Table(data) {
     const tbody = document.getElementById('rs485TableBody');
     tbody.innerHTML = '';
@@ -341,6 +356,9 @@
         </td>
         <td><input type="number" class="cfg-reg-addr" value="${dev.reg_addr}"></td>
         <td><input type="number" class="cfg-reg-count" value="${dev.reg_count}" min="1" max="16"></td>
+        <!-- 💡 渲染新增的兩個欄位 -->
+        <td><input type="number" class="cfg-read-interval" value="${dev.read_interval ?? 5}" min="1" max="3600"></td>
+        <td><input type="text" class="cfg-disabled-note" value="${dev.disabled_note || ''}" placeholder="無" readonly></td>
       `;
       tbody.appendChild(tr);
     });
@@ -458,37 +476,41 @@
     }
   }
 
-  async function saveRS485Config() {
-    const rows = document.querySelectorAll('#rs485TableBody tr');
-    const devices = [];
+  // 儲存設定至 ESP32 (包含收集新增的 read_interval 與 disabled_note 欄位)
+async function saveRS485Config() {
+  const rows = document.querySelectorAll('#rs485TableBody tr');
+  const devices = [];
 
-    rows.forEach((tr, idx) => {
-      devices.push({
-        name: tr.querySelector('.cfg-name').value.trim() || `設備 ${idx + 1}`,
-        slave_id: parseInt(tr.querySelector('.cfg-slave-id').value) || (idx + 1),
-        func_code: parseInt(tr.querySelector('.cfg-func-code').value),
-        reg_addr: parseInt(tr.querySelector('.cfg-reg-addr').value) || 0,
-        reg_count: parseInt(tr.querySelector('.cfg-reg-count').value) || 1,
-        enabled: tr.querySelector('.cfg-enabled').checked
-      });
+  rows.forEach((tr, idx) => {
+    devices.push({
+      name: tr.querySelector('.cfg-name').value.trim() || `設備 ${idx + 1}`,
+      slave_id: parseInt(tr.querySelector('.cfg-slave-id').value) || (idx + 1),
+      func_code: parseInt(tr.querySelector('.cfg-func-code').value),
+      reg_addr: parseInt(tr.querySelector('.cfg-reg-addr').value) || 0,
+      reg_count: parseInt(tr.querySelector('.cfg-reg-count').value) || 1,
+      enabled: tr.querySelector('.cfg-enabled').checked,
+      read_interval: parseInt(tr.querySelector('.cfg-read-interval').value) || 5,
+      disabled_note: tr.querySelector('.cfg-disabled-note').value || ""
     });
+  });
 
-    const jsonString = JSON.stringify({ baud: 9600, devices: devices });
+  const jsonString = JSON.stringify({ baud: 9600, devices: devices });
 
-    const utf8Bytes = new TextEncoder().encode(jsonString);
-    const base64String = btoa(String.fromCharCode(...utf8Bytes));
+  const utf8Bytes = new TextEncoder().encode(jsonString);
+  const base64String = btoa(String.fromCharCode(...utf8Bytes));
 
-    await sendBLE("SET_RS485_START");
+  await sendBLE("SET_RS485_START");
 
-    const chunkSize = 80;
-    for (let i = 0; i < base64String.length; i += chunkSize) {
-      const chunk = base64String.substring(i, i + chunkSize);
-      await sendBLE(`SET_RS485_B64:${chunk}`);
-      await new Promise(r => setTimeout(r, 40));
-    }
-
-    await sendBLE("SET_RS485_END");
+  const chunkSize = 80;
+  // 💡 修正點：將原本寫錯的 int i 改為 let i
+  for (let i = 0; i < base64String.length; i += chunkSize) {
+    const chunk = base64String.substring(i, i + chunkSize);
+    await sendBLE(`SET_RS485_B64:${chunk}`);
+    await new Promise(r => setTimeout(r, 60)); // 保持穩定延遲
   }
+
+  await sendBLE("SET_RS485_END");
+}
 
   function updateTestGroupDropdown() {
     const select = document.getElementById('testGroupSelect');
