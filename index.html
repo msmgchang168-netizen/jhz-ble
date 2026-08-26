@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 強制瀏覽器不快取 HTML 頁面 -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>JHZ 藍芽 & RS485 控制面板</title>
   <style>
     * {
@@ -318,18 +322,17 @@
     }
   }
 
-  // 切換 8P 及 4P 模式
-  function toggleRelayMode() {
-    if (currentRelayCount === 8) {
-      currentRelayCount = 4;
-      document.getElementById('currentModeLabel').innerText = "當前模式：4P (4通道)";
-      document.getElementById('btnToggleMode').innerText = "切換至 8P 模式";
-    } else {
-      currentRelayCount = 8;
-      document.getElementById('currentModeLabel').innerText = "當前模式：8P (8通道)";
-      document.getElementById('btnToggleMode').innerText = "切換至 4P 模式";
-    }
+  // 設定通道數並更新介面
+  function setRelayMode(count) {
+    currentRelayCount = count;
+    document.getElementById('currentModeLabel').innerText = `當前模式：${count}P (${count}通道)`;
+    document.getElementById('btnToggleMode').innerText = count === 8 ? "切換至 4P 模式" : "切換至 8P 模式";
     initRelayButtons();
+  }
+
+  // 手動切換 8P 及 4P 模式
+  function toggleRelayMode() {
+    setRelayMode(currentRelayCount === 8 ? 4 : 8);
   }
 
   function initRelayButtons() {
@@ -414,7 +417,11 @@
     try {
       log("正在尋找 BLE 裝置...");
       bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: 'JHZ_8P_BLE_' }, { namePrefix: 'JHZ_4P_BLE_' }],
+        filters: [
+          { namePrefix: 'JHZ_BLE_' },
+          { namePrefix: 'JHZ_8P_' },
+          { namePrefix: 'JHZ_4P_' }
+        ],
         optionalServices: [SERVICE_UUID]
       });
 
@@ -428,13 +435,23 @@
       await txCharacteristic.startNotifications();
       txCharacteristic.addEventListener('characteristicvaluechanged', handleBLEData);
 
+      // 自動根據藍芽裝置名稱切換 4P / 8P 模式
+      const deviceName = bleDevice.name || "";
+      if (deviceName.toUpperCase().includes("4P")) {
+        setRelayMode(4);
+        log(`[自動檢測] 偵測到 4P 裝置 (${deviceName})，切換至 4 通道模式`);
+      } else {
+        setRelayMode(8);
+        log(`[自動檢測] 偵測到 8P 裝置 (${deviceName})，切換至 8 通道模式`);
+      }
+
       document.getElementById('btnConnect').innerText = "中斷 BLE 連線";
       document.getElementById('btnConnect').style.backgroundColor = "#dc3545";
       const statusText = document.getElementById('statusText');
-      statusText.innerText = `狀態：已連線至 ${bleDevice.name}`;
+      statusText.innerText = `狀態：已連線至 ${deviceName}`;
       statusText.classList.add('connected');
 
-      log(`成功連線至 ${bleDevice.name}`);
+      log(`成功連線至 ${deviceName}`);
     } catch (error) {
       log(`[連線失敗] ${error}`);
     }
