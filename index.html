@@ -93,6 +93,25 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    /* 繼電器頂部控制列 */
+    .relay-top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .btn-mode {
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-mode:hover { background-color: #5a6268; }
+
     /* 繼電器按鈕格線 */
     .relay-grid {
       display: grid;
@@ -209,6 +228,12 @@
 
   <!-- Tab 1: 繼電器控制 -->
   <div id="relayTab" class="tab-content active">
+    <!-- 切換模式控制列 -->
+    <div class="relay-top-bar">
+      <span id="currentModeLabel" style="font-weight: bold; font-size: 14px; color: #495057;">當前模式：8P (8通道)</span>
+      <button id="btnToggleMode" class="btn-mode" onclick="toggleRelayMode()">切換至 4P 模式</button>
+    </div>
+
     <div class="relay-grid" id="relayGrid"></div>
     <div class="action-btns">
       <button class="btn-action btn-on" onclick="handleAllRelay(true)">全開 (ALL ON)</button>
@@ -232,9 +257,7 @@
             <th style="width: 95px;">功能碼</th>
             <th style="width: 75px;">暫存器位址</th>
             <th style="width: 65px;">讀取數量</th>
-            <!-- 💡 新增 1：讀取間隔秒數 -->
             <th style="width: 70px;">讀取間隔 (s)</th>
-            <!-- 💡 新增 2：異常停用備註 (由 ESP32 自動記錄日期時間) -->
             <th style="width: 140px;">備註 / 狀態</th>
           </tr>
         </thead>
@@ -273,6 +296,9 @@
   let isB64Rx = false;
   let isReceivingConfig = false;
 
+  // 模式變數 (預設為 8 通道)
+  let currentRelayCount = 8;
+
   initRelayButtons();
   initDefaultTable();
 
@@ -292,10 +318,26 @@
     }
   }
 
+  // 切換 8P 及 4P 模式
+  function toggleRelayMode() {
+    if (currentRelayCount === 8) {
+      currentRelayCount = 4;
+      document.getElementById('currentModeLabel').innerText = "當前模式：4P (4通道)";
+      document.getElementById('btnToggleMode').innerText = "切換至 8P 模式";
+    } else {
+      currentRelayCount = 8;
+      document.getElementById('currentModeLabel').innerText = "當前模式：8P (8通道)";
+      document.getElementById('btnToggleMode').innerText = "切換至 4P 模式";
+    }
+    initRelayButtons();
+  }
+
   function initRelayButtons() {
     const grid = document.getElementById('relayGrid');
     grid.innerHTML = '';
-    for (let i = 0; i < 8; i++) {
+    
+    // 根據 currentRelayCount 渲染按鈕數量
+    for (let i = 0; i < currentRelayCount; i++) {
       const btn = document.createElement('button');
       btn.className = 'btn-relay';
       btn.id = `relay-btn-${i}`;
@@ -310,7 +352,7 @@
 
   function handleAllRelay(enable) {
     sendBLE(enable ? 'ALL_ON' : 'ALL_OFF');
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < currentRelayCount; i++) {
       const btn = document.getElementById(`relay-btn-${i}`);
       if (btn) {
         if (enable) btn.classList.add('active');
@@ -356,7 +398,6 @@
         </td>
         <td><input type="number" class="cfg-reg-addr" value="${dev.reg_addr}"></td>
         <td><input type="number" class="cfg-reg-count" value="${dev.reg_count}" min="1" max="16"></td>
-        <!-- 💡 渲染新增的兩個欄位 -->
         <td><input type="number" class="cfg-read-interval" value="${dev.read_interval ?? 5}" min="1" max="3600"></td>
         <td><input type="text" class="cfg-disabled-note" value="${dev.disabled_note || ''}" placeholder="無" readonly></td>
       `;
@@ -373,7 +414,7 @@
     try {
       log("正在尋找 BLE 裝置...");
       bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: 'JHZ_BLE_' }],
+        filters: [{ namePrefix: 'JHZ_BLE_' }, { namePrefix: 'JHZ_4P_BLE_' }],
         optionalServices: [SERVICE_UUID]
       });
 
@@ -476,41 +517,40 @@
     }
   }
 
-  // 儲存設定至 ESP32 (包含收集新增的 read_interval 與 disabled_note 欄位)
-async function saveRS485Config() {
-  const rows = document.querySelectorAll('#rs485TableBody tr');
-  const devices = [];
+  // 儲存設定至 ESP32
+  async function saveRS485Config() {
+    const rows = document.querySelectorAll('#rs485TableBody tr');
+    const devices = [];
 
-  rows.forEach((tr, idx) => {
-    devices.push({
-      name: tr.querySelector('.cfg-name').value.trim() || `設備 ${idx + 1}`,
-      slave_id: parseInt(tr.querySelector('.cfg-slave-id').value) || (idx + 1),
-      func_code: parseInt(tr.querySelector('.cfg-func-code').value),
-      reg_addr: parseInt(tr.querySelector('.cfg-reg-addr').value) || 0,
-      reg_count: parseInt(tr.querySelector('.cfg-reg-count').value) || 1,
-      enabled: tr.querySelector('.cfg-enabled').checked,
-      read_interval: parseInt(tr.querySelector('.cfg-read-interval').value) || 5,
-      disabled_note: tr.querySelector('.cfg-disabled-note').value || ""
+    rows.forEach((tr, idx) => {
+      devices.push({
+        name: tr.querySelector('.cfg-name').value.trim() || `設備 ${idx + 1}`,
+        slave_id: parseInt(tr.querySelector('.cfg-slave-id').value) || (idx + 1),
+        func_code: parseInt(tr.querySelector('.cfg-func-code').value),
+        reg_addr: parseInt(tr.querySelector('.cfg-reg-addr').value) || 0,
+        reg_count: parseInt(tr.querySelector('.cfg-reg-count').value) || 1,
+        enabled: tr.querySelector('.cfg-enabled').checked,
+        read_interval: parseInt(tr.querySelector('.cfg-read-interval').value) || 5,
+        disabled_note: tr.querySelector('.cfg-disabled-note').value || ""
+      });
     });
-  });
 
-  const jsonString = JSON.stringify({ baud: 9600, devices: devices });
+    const jsonString = JSON.stringify({ baud: 9600, devices: devices });
 
-  const utf8Bytes = new TextEncoder().encode(jsonString);
-  const base64String = btoa(String.fromCharCode(...utf8Bytes));
+    const utf8Bytes = new TextEncoder().encode(jsonString);
+    const base64String = btoa(String.fromCharCode(...utf8Bytes));
 
-  await sendBLE("SET_RS485_START");
+    await sendBLE("SET_RS485_START");
 
-  const chunkSize = 80;
-  // 💡 修正點：將原本寫錯的 int i 改為 let i
-  for (let i = 0; i < base64String.length; i += chunkSize) {
-    const chunk = base64String.substring(i, i + chunkSize);
-    await sendBLE(`SET_RS485_B64:${chunk}`);
-    await new Promise(r => setTimeout(r, 60)); // 保持穩定延遲
+    const chunkSize = 80;
+    for (let i = 0; i < base64String.length; i += chunkSize) {
+      const chunk = base64String.substring(i, i + chunkSize);
+      await sendBLE(`SET_RS485_B64:${chunk}`);
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    await sendBLE("SET_RS485_END");
   }
-
-  await sendBLE("SET_RS485_END");
-}
 
   function updateTestGroupDropdown() {
     const select = document.getElementById('testGroupSelect');
