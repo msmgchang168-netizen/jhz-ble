@@ -414,7 +414,7 @@
     try {
       log("正在尋找 BLE 裝置...");
       bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: 'JHZ_BLE_' }, { namePrefix: 'JHZ_4P_BLE_' }],
+        filters: [{ namePrefix: 'JHZ_8P_BLE_' }, { namePrefix: 'JHZ_4P_BLE_' }],
         optionalServices: [SERVICE_UUID]
       });
 
